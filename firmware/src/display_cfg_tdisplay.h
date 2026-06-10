@@ -5,8 +5,8 @@
 // ============================================================================
 // LilyGO T-Display S3 — 1.9" 170×320 ST7789 IPS, 8-bit i80 parallel
 //
-// We run the panel in landscape (320×170) with rotation = 1. With USB-C on
-// the right edge in landscape, GPIO 0 lands on the top edge and GPIO 14 on
+// We run the panel in landscape (320×170) with rotation = 3. With USB-C on
+// the left edge in landscape, GPIO 14 lands on the top edge and GPIO 0 on
 // the bottom edge — that's the "Top button / Bottom button" mapping in
 // main_tdisplay.cpp.
 // ============================================================================
@@ -45,8 +45,8 @@
 #define LCD_D7      48
 
 // ---- Physical buttons (landscape orientation: top/bottom)
-#define BTN_TOP     0    // BOOT key
-#define BTN_BOTTOM  14
+#define BTN_TOP     14
+#define BTN_BOTTOM  0    // BOOT key
 
 // ---- Global display object (defined in main_tdisplay.cpp)
 extern Arduino_DataBus *bus;

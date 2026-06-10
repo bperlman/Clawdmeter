@@ -20,13 +20,13 @@ Arduino_DataBus *bus = new Arduino_ESP32LCD8(
     LCD_DC, LCD_CS, LCD_WR, LCD_RD,
     LCD_D0, LCD_D1, LCD_D2, LCD_D3,
     LCD_D4, LCD_D5, LCD_D6, LCD_D7);
-// Panel is 170 wide × 320 tall natively. Rotation=1 puts USB-C on the
-// right edge in landscape (which puts GPIO 0 on the top edge, GPIO 14 on
+// Panel is 170 wide × 320 tall natively. Rotation=3 puts USB-C on the
+// left edge in landscape (which puts GPIO 14 on the top edge, GPIO 0 on
 // the bottom — that's how we map the buttons). IPS=true. The 35-px column
 // offsets center the 170-wide visible window inside the ST7789's 240-wide
 // line buffer; Arduino_GFX swaps them automatically for landscape rotation.
 Arduino_GFX *gfx = new Arduino_ST7789(
-    bus, LCD_RST, 1 /* rotation */, true /* IPS */,
+    bus, LCD_RST, 3 /* rotation */, true /* IPS */,
     170, 320,
     35, 0, 35, 0);
 
