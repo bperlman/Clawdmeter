@@ -12,7 +12,7 @@ the [Waveshare ESP32-S3-Touch-AMOLED-2.16](https://docs.waveshare.com/ESP32-S3-T
 for the [LilyGO T-Display S3](https://lilygo.cc/products/t-display-s3) (1.9" 170×320 ST7789 IPS) and runs in landscape at 320×170.
 
 It pairs with my laptop over Bluetooth, the splash screen plays pixel-art Clawd animations that get busier when your usage rate climbs,
-and the two side buttons send Space and Shift+Tab over BLE HID for Claude Code's voice mode and mode-toggle shortcuts.
+and the display flips from the splash to the usage meter on its own whenever your usage is actively climbing — it's designed to sit above the screen and never need touching. The two side buttons only control the display itself (Hermann's original sends Space and Shift+Tab over BLE HID; this fork drops that).
 
 |              Usage meter              |              Clawd animation screen              |
 | :-----------------------------------: | :----------------------------------------------: |
@@ -24,16 +24,16 @@ The Clawd animations come from [claudepix](https://claudepix.vercel.app), [@amaa
 
 ## Screens (T-Display S3, 320×170 landscape)
 
-The device boots into the splash. From the splash, a long-press on the **bottom** button cycles to the Usage screen; the **top** button long-press cycles Usage ↔ Bluetooth ↔ Splash from then on.
+The device boots into the splash. When fresh data shows your session usage climbing, it switches to the Usage screen automatically, and drifts back to the splash after 5 idle minutes. Tapping the **top** button cycles Splash → Usage → Bluetooth manually (a manual choice sticks until the next usage increment re-arms the auto-switch).
 
 |              Splash                              |              Usage                            |                Bluetooth                            |
 | :----------------------------------------------: | :-------------------------------------------: | :-------------------------------------------------: |
 | ![Splash](screenshots/tdisplay_splash.png)       | ![Usage](screenshots/tdisplay_usage.png)      | ![Bluetooth](screenshots/tdisplay_bluetooth.png)    |
-| Splash; long-press top button to leave           | Session and weekly utilization                | Connection status; hold both buttons 2s to reset    |
+| Splash; tap top button to leave                  | Session and weekly utilization                | Connection status; hold both buttons 2s to reset    |
 
 For the original 480×480 AMOLED layout, see [Hermann's repo](https://github.com/HermannBjorgvin/Clawdmeter) — its screenshots are also still in [`screenshots/`](screenshots/) (`splash.png`, `usage.png`, `bluetooth.png`).
 
-While the splash is up, the bottom button cycles animations instead of toggling the splash overlay. The firmware also auto-rotates every 20 s within the current usage-rate group, so a long stretch on the splash isn't just one Clawd on loop.
+While the splash is up, tapping the bottom button cycles animations; on any other screen it jumps back to the splash. The firmware also auto-rotates every 20 s within the current usage-rate group, so a long stretch on the splash isn't just one Clawd on loop.
 
 ## Hardware
 
@@ -76,9 +76,11 @@ After flashing, the device advertises as "Claude Controller". You do not need to
 
 On macOS, the first BLE write will trigger a permission prompt — approve it under **System Settings → Privacy & Security → Bluetooth** for the `python3` inside `daemon-macos/.venv/bin`.
 
+macOS also bonds with the device (it advertises a HID keyboard service) and will usually win the reconnect race after a device reboot, which stops the advertising a scan would find. The macOS daemon handles this: it first asks CoreBluetooth for already-system-connected peripherals carrying the Clawdmeter service and connects through the existing link, falling back to the cached address and then a scan.
+
 ## Install the daemon
 
-The daemon reads your Claude Code OAuth token, polls your usage every 60 seconds, and sends it to the device over BLE.
+The daemon reads your Claude Code OAuth token, polls your usage every 15 seconds (macOS; the Linux daemon polls every 60), and sends it to the device over BLE.
 
 ### macOS (this fork)
 
@@ -124,22 +126,20 @@ The Linux daemon reads the OAuth token from `~/.claude/.credentials.json`.
 4. The daemon connects to the ESP32 over BLE and writes a JSON payload to the GATT RX characteristic.
 5. The firmware parses it and updates the LVGL dashboard.
 6. The firmware also tracks the rate of change of session % over a 5-minute window and picks splash animations from the matching mood group.
-7. The two side buttons are independent of all of this — they send Space and Shift+Tab as BLE HID keyboard input to the paired host directly.
+7. When a payload shows session % higher than the last one, the firmware auto-switches from the splash to the Usage screen, and returns to the splash after 5 minutes without a further increase.
 
 ## Physical buttons (T-Display S3)
 
-The T-Display S3 has two side buttons. In landscape (USB-C on the right) the BOOT button is on top and the user button is on the bottom. Each has a short-press and a long-press action.
+The T-Display S3 has two side buttons. In landscape (USB-C on the right) the BOOT button is on top and the user button is on the bottom. Both are simple taps (actions fire on release), and both only control the display — this fork never sends keystrokes to the paired host.
 
-| Button     | GPIO    | Short tap                                              | Long press (≥ 600 ms)                                    |
-| ---------- | ------- | ------------------------------------------------------ | -------------------------------------------------------- |
-| **Top**    | GPIO 0  | Space (Claude Code voice-mode toggle)                  | Cycle screen (Usage ↔ Bluetooth ↔ Splash)                |
-| **Bottom** | GPIO 14 | Shift+Tab (Claude Code mode toggle)                    | On Splash: next animation. Elsewhere: toggle Splash      |
+| Button     | GPIO    | Tap                                                    |
+| ---------- | ------- | ------------------------------------------------------ |
+| **Top**    | GPIO 0  | Cycle screen (Splash → Usage → Bluetooth)              |
+| **Bottom** | GPIO 14 | On Splash: next animation. Elsewhere: back to Splash   |
 
 Hold **both buttons together for 2 seconds** to clear BLE bonds (this replaces the on-screen "Reset Bluetooth" touch zone on the AMOLED version).
 
-Space and Shift+Tab go out as standard BLE HID keyboard reports, so they trigger in whatever window has focus on the paired host — not just Claude Code.
-
-The original AMOLED has three buttons (Left/Middle/Right) — see [Hermann's README](https://github.com/HermannBjorgvin/Clawdmeter#physical-buttons) for that mapping.
+The original AMOLED build (and Hermann's upstream T-Display mapping) uses the buttons as a BLE HID keyboard for Claude Code shortcuts (Space / Shift+Tab) — see [Hermann's README](https://github.com/HermannBjorgvin/Clawdmeter#physical-buttons). This fork removed that on the T-Display: the display is meant to be glanceable, not an input device.
 
 ## BLE protocol
 
@@ -151,6 +151,8 @@ The device advertises a custom GATT service alongside the standard HID keyboard 
 | RX Characteristic (write)  | `4c41555a-4465-7669-6365-000000000002` |
 | TX Characteristic (notify) | `4c41555a-4465-7669-6365-000000000003` |
 | **HID Service**            | `00001812-0000-1000-8000-00805f9b34fb` |
+
+The HID keyboard service is still advertised (the BLE module is shared with the AMOLED build, and the host's keyboard bond is what enables instant reconnects), but the T-Display firmware never sends keystrokes over it.
 
 JSON payload format (written to RX):
 
