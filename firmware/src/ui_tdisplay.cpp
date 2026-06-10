@@ -22,10 +22,12 @@ LV_FONT_DECLARE(font_mono_18);
 #define COL_TEXT      THEME_TEXT
 #define COL_DIM       THEME_DIM
 #define COL_ACCENT    THEME_ACCENT
-#define COL_GREEN     THEME_GREEN
+// Brighter than THEME_GREEN — the 1.9" IPS panel is dimmer and lower-contrast
+// than the AMOLED, and the muted olive fill was hard to see on it.
+#define COL_GREEN     lv_color_hex(0xa6d472)
 #define COL_AMBER     THEME_AMBER
 #define COL_RED       THEME_RED
-#define COL_BAR_BG    THEME_BAR_BG
+#define COL_BAR_BG    lv_color_hex(0x3d3d39)  // lighter track for the IPS panel
 
 // ---- Layout constants (320×170 landscape) ----
 // 170-px vertical budget:
@@ -222,7 +224,7 @@ static void make_usage_panel(lv_obj_t* parent, int x, const char* pill_text,
     *out_pill = make_pill(panel, pill_text);
     lv_obj_align(*out_pill, LV_ALIGN_TOP_RIGHT, 0, 4);
 
-    *out_bar = make_bar(panel, 0, 30, inner_w, 10);
+    *out_bar = make_bar(panel, 0, 30, inner_w, 12);
 
     *out_reset = lv_label_create(panel);
     lv_label_set_text(*out_reset, "---");

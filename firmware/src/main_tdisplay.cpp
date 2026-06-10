@@ -109,72 +109,48 @@ static bool parse_json(const char* json, UsageData* out) {
 }
 
 // ============================================================================
-// Two-button handler with short/long-press detection.
+// Two-button handler — device-local controls only, no HID keystrokes.
 //
-//   Top button (GPIO 0)
-//     short tap            → HID Space (Claude Code voice toggle)
-//     long  (≥ 600 ms)     → cycle screen
+//   Top button (GPIO 0)     tap → cycle screen
+//   Bottom button (GPIO 14) tap → next animation (on splash) / back to splash
+//   Both held ≥ 2000 ms         → ble_clear_bonds() (forget BLE host pairing)
 //
-//   Bottom button (GPIO 14)
-//     short tap            → HID Shift+Tab (Claude Code mode toggle)
-//     long  (≥ 600 ms)     → toggle Splash overlay (or next animation if on splash)
-//
-//   Both held ≥ 2000 ms    → ble_clear_bonds() (forget BLE host pairing)
-//
-// Both-held suppresses individual long/short events so the user doesn't
-// trigger a screen-cycle on the way to the BLE reset.
+// Actions fire on release. Both-held suppresses the individual taps so the
+// user doesn't trigger a screen-cycle on the way to the BLE reset.
 // ============================================================================
 
-#define LONG_PRESS_MS  600
 #define BOTH_RESET_MS  2000
-#define HID_KEY_SPACE  0x2C
-#define HID_KEY_TAB    0x2B
-#define HID_MOD_LSHIFT 0x02
 
 struct Btn {
     uint8_t pin;
     bool    was_down;
-    uint32_t down_ms;
-    bool    long_fired;
     bool    suppress;        // set when both-held; clears on release
 };
 
-static Btn btn_top    = { BTN_TOP,    false, 0, false, false };
-static Btn btn_bottom = { BTN_BOTTOM, false, 0, false, false };
+static Btn btn_top    = { BTN_TOP,    false, false };
+static Btn btn_bottom = { BTN_BOTTOM, false, false };
 
 static uint32_t both_down_start = 0;
 static bool     both_reset_fired = false;
 
-static void send_tap(uint8_t key, uint8_t mod) {
-    ble_keyboard_press(key, mod);
-    delay(20);
-    ble_keyboard_release();
-}
+// Set when the firmware auto-switches splash→usage on an increment; a manual
+// screen change takes priority until the next increment re-arms it.
+static bool auto_on_usage = false;
 
-static void top_short(void) { send_tap(HID_KEY_SPACE, 0); }
-static void top_long(void)  { ui_cycle_screen(); }
-static void bot_short(void) { send_tap(HID_KEY_TAB, HID_MOD_LSHIFT); }
-static void bot_long(void) {
+static void top_tap(void) {
+    auto_on_usage = false;
+    ui_cycle_screen();
+}
+static void bot_tap(void) {
+    auto_on_usage = false;
     if (ui_get_current_screen() == SCREEN_SPLASH) splash_next();
-    else                                          ui_toggle_splash();
+    else                                          ui_show_screen(SCREEN_SPLASH);
 }
 
-static void poll_button(Btn& b, void (*on_short)(), void (*on_long)()) {
+static void poll_button(Btn& b, void (*on_tap)()) {
     bool now_down = (digitalRead(b.pin) == LOW);
-    uint32_t now  = millis();
-
-    if (now_down && !b.was_down) {
-        b.down_ms = now;
-        b.long_fired = false;
-    } else if (now_down && b.was_down) {
-        if (!b.long_fired && !b.suppress && (now - b.down_ms) >= LONG_PRESS_MS) {
-            on_long();
-            b.long_fired = true;
-        }
-    } else if (!now_down && b.was_down) {
-        if (!b.long_fired && !b.suppress) {
-            on_short();
-        }
+    if (!now_down && b.was_down) {
+        if (!b.suppress) on_tap();
         b.suppress = false;
     }
     b.was_down = now_down;
@@ -200,8 +176,8 @@ static void poll_buttons(void) {
         both_reset_fired = false;
     }
 
-    poll_button(btn_top,    top_short, top_long);
-    poll_button(btn_bottom, bot_short, bot_long);
+    poll_button(btn_top,    top_tap);
+    poll_button(btn_bottom, bot_tap);
 }
 
 // ============================================================================
@@ -258,6 +234,35 @@ void setup(void) {
 
 static ble_state_t last_ble_state = BLE_STATE_INIT;
 
+// ---- Auto screen switching: splash → usage while usage is climbing,
+// back to splash after AUTO_IDLE_MS without an increment.
+#define AUTO_IDLE_MS (5UL * 60UL * 1000UL)
+static float    last_session_pct = -1.0f;
+static uint32_t last_increment_ms = 0;
+
+static void auto_screen_on_data(float session_pct) {
+    uint32_t now = millis();
+    if (last_session_pct >= 0.0f && session_pct > last_session_pct) {
+        last_increment_ms = now;
+        if (ui_get_current_screen() == SCREEN_SPLASH) {
+            Serial.printf("auto: usage climbing (%.1f%% -> %.1f%%), showing usage screen\n",
+                          last_session_pct, session_pct);
+            ui_show_screen(SCREEN_USAGE);
+            auto_on_usage = true;
+        }
+    }
+    last_session_pct = session_pct;
+}
+
+static void auto_screen_tick(void) {
+    if (auto_on_usage && ui_get_current_screen() == SCREEN_USAGE &&
+        (millis() - last_increment_ms) >= AUTO_IDLE_MS) {
+        Serial.println("auto: usage idle, returning to splash");
+        ui_show_screen(SCREEN_SPLASH);
+        auto_on_usage = false;
+    }
+}
+
 void loop(void) {
     lv_timer_handler();
     ui_tick_anim();
@@ -284,11 +289,14 @@ void loop(void) {
                 if (splash_is_active()) splash_pick_for_current_rate();
             }
             ui_update(&usage);
+            auto_screen_on_data(usage.session_pct);
             ble_send_ack();
         } else {
             ble_send_nack();
         }
     }
+
+    auto_screen_tick();
 
     delay(5);
 }

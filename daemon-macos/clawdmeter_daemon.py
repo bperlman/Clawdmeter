@@ -27,13 +27,16 @@ import urllib.request
 from pathlib import Path
 
 from bleak import BleakClient, BleakScanner
+from bleak.backends.corebluetooth.CentralManagerDelegate import CentralManagerDelegate
+from bleak.backends.device import BLEDevice
+from CoreBluetooth import CBUUID
 
 # ---- Configuration ----
 DEVICE_NAME = "Claude Controller"
 SERVICE_UUID = "4c41555a-4465-7669-6365-000000000001"
 RX_CHAR_UUID = "4c41555a-4465-7669-6365-000000000002"  # daemon writes here
 REQ_CHAR_UUID = "4c41555a-4465-7669-6365-000000000004"  # firmware notifies here
-POLL_INTERVAL = 60   # seconds between Anthropic polls
+POLL_INTERVAL = 15   # seconds between Anthropic polls
 TICK = 5             # inner-loop sleep
 SCAN_TIMEOUT = 10
 CONNECT_TIMEOUT = 10
@@ -194,6 +197,28 @@ async def discover_device() -> str | None:
     return None
 
 
+# The device advertises only while it has no connection. macOS bonds with it
+# as a BLE HID keyboard, so after every device reboot the OS usually wins the
+# reconnect race — advertising stops and a scan will never see it. CoreBluetooth
+# can still hand us the already-connected peripheral; bleak just doesn't expose
+# that, so we call retrieveConnectedPeripheralsWithServices: ourselves and wrap
+# the result in a BLEDevice (details must be the (CBPeripheral, manager) pair
+# BleakClient expects). The manager must outlive the connection — the caller
+# holds it via the returned BLEDevice's details.
+async def find_system_connected_device() -> BLEDevice | None:
+    mgr = CentralManagerDelegate()
+    await mgr.wait_until_ready()
+    peripherals = mgr.central_manager.retrieveConnectedPeripheralsWithServices_(
+        [CBUUID.UUIDWithString_(SERVICE_UUID)]
+    )
+    for p in peripherals:
+        if p.name() == DEVICE_NAME:
+            addr = str(p.identifier().UUIDString())
+            log.info("Found %s already system-connected at %s", DEVICE_NAME, addr)
+            return BLEDevice(addr, str(p.name()), (p, mgr))
+    return None
+
+
 # ============================================================================
 # Connection loop
 # ============================================================================
@@ -210,9 +235,10 @@ class Daemon:
         log.info("Refresh requested by device (data=%s)", bytes(data).hex())
         self.refresh_requested.set()
 
-    async def connect(self, address: str) -> BleakClient | None:
+    async def connect(self, target: str | BLEDevice) -> BleakClient | None:
+        address = target.address if isinstance(target, BLEDevice) else target
         log.info("Connecting to %s...", address)
-        client = BleakClient(address, timeout=CONNECT_TIMEOUT)
+        client = BleakClient(target, timeout=CONNECT_TIMEOUT)
         try:
             await client.connect()
         except Exception as e:
@@ -244,17 +270,22 @@ class Daemon:
     async def run(self) -> None:
         backoff = 1
         while not self.stop.is_set():
-            address = load_cached_address()
-            if address is None:
-                address = await discover_device()
-                if address is None:
+            # If macOS already holds the connection (bonded HID keyboard),
+            # the device isn't advertising and neither the cached address
+            # nor a scan can reach it — but this can.
+            target: str | BLEDevice | None = await find_system_connected_device()
+            if target is None:
+                target = load_cached_address()
+            if target is None:
+                target = await discover_device()
+                if target is None:
                     log.info("Device not found, retrying in %ds...", backoff)
                     await self._sleep_or_stop(backoff)
                     backoff = min(backoff * 2, 60)
                     continue
-                save_cached_address(address)
+                save_cached_address(target)
 
-            client = await self.connect(address)
+            client = await self.connect(target)
             if client is None:
                 log.info("Dropping cached address and retrying in %ds...", backoff)
                 drop_cached_address()

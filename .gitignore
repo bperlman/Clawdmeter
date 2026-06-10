@@ -2,6 +2,10 @@
 firmware/.pio/
 firmware/.vscode/
 
+# macOS daemon venv + bytecode
+daemon-macos/.venv/
+__pycache__/
+
 # OS
 .DS_Store
 
