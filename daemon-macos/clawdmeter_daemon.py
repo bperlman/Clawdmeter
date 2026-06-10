@@ -148,9 +148,13 @@ def poll_anthropic(token: str) -> dict:
     status = headers.get("anthropic-ratelimit-unified-5h-status", "unknown")
 
     return {
-        "s": round(s5_util * 100),
+        # Pass through whatever precision the API gives (currently whole
+        # percents — the utilization headers carry two decimals of the
+        # fraction). The firmware compares consecutive values to detect
+        # "usage is climbing", so don't round away precision here.
+        "s": round(s5_util * 100, 2),
         "sr": max(0, round((s5_reset - now) / 60)) if s5_reset else 0,
-        "w": round(s7_util * 100),
+        "w": round(s7_util * 100, 2),
         "wr": max(0, round((s7_reset - now) / 60)) if s7_reset else 0,
         "st": status,
         "ok": True,

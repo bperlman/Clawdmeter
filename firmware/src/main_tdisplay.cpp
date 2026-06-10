@@ -236,7 +236,9 @@ static ble_state_t last_ble_state = BLE_STATE_INIT;
 
 // ---- Auto screen switching: splash → usage while usage is climbing,
 // back to splash after AUTO_IDLE_MS without an increment.
-#define AUTO_IDLE_MS (5UL * 60UL * 1000UL)
+// The API reports utilization at whole-percent granularity, and heavy use
+// accrues ~1%/10min — so anything shorter reads an active session as idle.
+#define AUTO_IDLE_MS (20UL * 60UL * 1000UL)
 static float    last_session_pct = -1.0f;
 static uint32_t last_increment_ms = 0;
 
