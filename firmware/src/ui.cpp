@@ -385,7 +385,7 @@ void ui_init(void) {
 
     init_usage_screen(scr);
     init_bluetooth_screen(scr);
-    splash_init(scr);
+    splash_init(scr, SCR_W, SCR_H, 24);
 
     // Splash is touch-toggled — tap anywhere on the splash dismisses it
     if (splash_get_root()) {

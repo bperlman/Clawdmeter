@@ -1,72 +1,109 @@
-# Clawdmeter
+# Clawdmeter — LilyGO T-Display S3 fork
 
-A small ESP32 dashboard I made for my desk to keep an eye on Claude Code usage.
+> **Fork notice.** This repository is a fork of [HermannBjorgvin/Clawdmeter](https://github.com/HermannBjorgvin/Clawdmeter)
+> — the original project, which targets the **Waveshare ESP32-S3-Touch-AMOLED-2.16**. Everything good about Clawdmeter (the
+> concept, the daemon, the pixel-art splash, the brand work, the BLE/HID architecture) is Hermann's work.
+> This fork exists only because I had a **LilyGO T-Display S3** on my desk instead of the Waveshare board, and porting the
+> firmware to it required a separate display driver, layout, and input model. Please star
+> [the original repo](https://github.com/HermannBjorgvin/Clawdmeter) if you find this project useful.
 
-It runs on a [Waveshare ESP32-S3-Touch-AMOLED-2.16](https://docs.waveshare.com/ESP32-S3-Touch-AMOLED-2.16) and pairs with my laptop over Bluetooth, and the splash screen plays pixel-art Clawd animations that get
-busier when your usage rate climbs. The two side buttons send Space and
-Shift+Tab over BLE HID for Claude Code's voice mode and mode-toggle shortcuts.
+A small ESP32 dashboard for my desk to keep an eye on Claude Code usage. The original ran on
+the [Waveshare ESP32-S3-Touch-AMOLED-2.16](https://docs.waveshare.com/ESP32-S3-Touch-AMOLED-2.16); this fork adds support
+for the [LilyGO T-Display S3](https://lilygo.cc/products/t-display-s3) (1.9" 170×320 ST7789 IPS) and runs in landscape at 320×170.
+
+It pairs with my laptop over Bluetooth, the splash screen plays pixel-art Clawd animations that get busier when your usage rate climbs,
+and the two side buttons send Space and Shift+Tab over BLE HID for Claude Code's voice mode and mode-toggle shortcuts.
 
 |              Usage meter              |              Clawd animation screen              |
 | :-----------------------------------: | :----------------------------------------------: |
-| ![Usage meter](assets/demo.jpeg) | ![Clawd animation screen](assets/demo.gif) |
+| ![Usage meter](assets/demo.jpeg)      | ![Clawd animation screen](assets/demo.gif)       |
 
-The Clawd animations come from [claudepix](https://claudepix.vercel.app), [@amaanbuilds](https://x.com/amaanbuilds)'s library of pixel-art Clawd sprites, check it out, it's lovely.
+> The demo media above is from Hermann's original 480×480 AMOLED build — the T-Display fork shows the same content in landscape on the smaller panel.
 
-## Screens
+The Clawd animations come from [claudepix](https://claudepix.vercel.app), [@amaanbuilds](https://x.com/amaanbuilds)'s library of pixel-art Clawd sprites — check it out, it's lovely.
 
-The device boots into the splash and stays there until you press the middle (PWR) button, which cycles between Usage and Bluetooth. Tap the screen anywhere (except the Reset zone on the Bluetooth screen) to flip back to the splash; tap again to dismiss it.
+## Screens (T-Display S3, 320×170 landscape)
 
-|              Splash               |              Usage              |                Bluetooth                |
-| :-------------------------------: | :-----------------------------: | :-------------------------------------: |
-| ![Splash](screenshots/splash.png) | ![Usage](screenshots/usage.png) | ![Bluetooth](screenshots/bluetooth.png) |
-|   Splash; touch-toggle anytime    | Session and weekly utilization  |    Connection status and bond reset     |
+The device boots into the splash. From the splash, a long-press on the **bottom** button cycles to the Usage screen; the **top** button long-press cycles Usage ↔ Bluetooth ↔ Splash from then on.
 
-While the splash is up, the middle button cycles animations instead of screens. The firmware also auto-rotates every 20 s within the current usage-rate group, so a long stretch on the splash isn't just one Clawd on loop.
+|              Splash                              |              Usage                            |                Bluetooth                            |
+| :----------------------------------------------: | :-------------------------------------------: | :-------------------------------------------------: |
+| ![Splash](screenshots/tdisplay_splash.png)       | ![Usage](screenshots/tdisplay_usage.png)      | ![Bluetooth](screenshots/tdisplay_bluetooth.png)    |
+| Splash; long-press top button to leave           | Session and weekly utilization                | Connection status; hold both buttons 2s to reset    |
+
+For the original 480×480 AMOLED layout, see [Hermann's repo](https://github.com/HermannBjorgvin/Clawdmeter) — its screenshots are also still in [`screenshots/`](screenshots/) (`splash.png`, `usage.png`, `bluetooth.png`).
+
+While the splash is up, the bottom button cycles animations instead of toggling the splash overlay. The firmware also auto-rotates every 20 s within the current usage-rate group, so a long stretch on the splash isn't just one Clawd on loop.
 
 ## Hardware
 
-- [Waveshare ESP32-S3-Touch-AMOLED-2.16](https://docs.waveshare.com/ESP32-S3-Touch-AMOLED-2.16) — ESP32-S3R8, 2.16" 480×480 AMOLED (CO5300 QSPI), CST9220 cap touch, AXP2101 PMU + Li-Po battery, QMI8658 IMU
-- USB-C cable for flashing firmware and charging
-- 3.7V Li-Po battery (MX1.25 2-pin connector, optional)
+This fork targets the **LilyGO T-Display S3** (N16R8 — 16 MB Flash + 8 MB OPI PSRAM, ESP32-S3R8):
+
+- 1.9" 170×320 ST7789 IPS, 8-bit i80 parallel
+- Two physical buttons (top: GPIO 0, bottom: GPIO 14 — assignment is landscape-orientation-dependent; see `display_cfg_tdisplay.h`)
+- USB-C for flashing
+- No touch, no IMU, no PMU — the original board has all three and uses them; this fork drops them entirely
+
+The original board is the [Waveshare ESP32-S3-Touch-AMOLED-2.16](https://docs.waveshare.com/ESP32-S3-Touch-AMOLED-2.16). Both build environments live in the same `firmware/` tree and pick their board-specific source files via `build_src_filter`. Pick the env that matches your hardware.
 
 ## Prerequisites
 
-- Linux (tested on Ubuntu)
-- [PlatformIO CLI](https://docs.platformio.org/en/latest/core/installation/index.html)
-- `curl`, `bluetoothctl`, `busctl` (BlueZ Bluetooth stack)
+- macOS or Linux
+- [PlatformIO CLI](https://docs.platformio.org/en/latest/core/installation/index.html) — `pipx install platformio` on macOS, see PlatformIO's docs for Linux
+- Daemon dependencies:
+  - **macOS** — Python 3.9+, `bleak` (auto-installed into a local venv by `install-macos.sh`)
+  - **Linux** — `curl`, `awk`, `bluetoothctl`, `busctl` (BlueZ stack)
 - Claude Code with an active subscription
-
-## MacOS support
-
-MacOS is fully supported, that is as soon as you prompt it and create a pull request for it!
-
-I run Linux myself so it's harder for me to test this but anyone who wants MacOS support is welcome to contribute.
 
 ## Flash the firmware
 
-```bash
-cd firmware
-pio run -t upload --upload-port /dev/ttyACM0
-```
-
-## Bluetooth pairing
-
-After flashing, the device advertises as "Claude Controller". Pair it once:
+LilyGO T-Display S3:
 
 ```bash
-# Scan for the device
-bluetoothctl scan le
-
-# When "Claude Controller" appears, pair and trust it
-bluetoothctl pair F4:12:FA:C0:8F:E5    # use your device's MAC
-bluetoothctl trust F4:12:FA:C0:8F:E5
+pio run -d firmware -e lilygo_tdisplay_s3 -t upload --upload-port /dev/cu.usbmodem* # macOS
+pio run -d firmware -e lilygo_tdisplay_s3 -t upload --upload-port /dev/ttyACM0      # Linux
 ```
 
-The MAC address is shown on the Bluetooth screen — press the middle (PWR) button to cycle to it.
+Original Waveshare AMOLED:
+
+```bash
+pio run -d firmware -e waveshare_amoled_216 -t upload --upload-port /dev/ttyACM0
+```
+
+## Pair the device
+
+After flashing, the device advertises as "Claude Controller". You do not need to manually pair it — the daemon scans by name on first run and caches the device address for fast reconnects. Just keep the device powered and showing the Bluetooth screen the first time you start the daemon.
+
+On macOS, the first BLE write will trigger a permission prompt — approve it under **System Settings → Privacy & Security → Bluetooth** for the `python3` inside `daemon-macos/.venv/bin`.
 
 ## Install the daemon
 
-The daemon polls your Claude usage every 60 seconds and sends it to the display over BLE.
+The daemon reads your Claude Code OAuth token, polls your usage every 60 seconds, and sends it to the device over BLE.
+
+### macOS (this fork)
+
+```bash
+./install-macos.sh
+```
+
+The installer creates an isolated Python venv under `daemon-macos/.venv`, installs `bleak`, generates a `launchd` agent (`~/Library/LaunchAgents/com.clawdmeter.daemon.plist`), and loads it. The agent auto-starts at every login.
+
+Logs:
+
+```bash
+tail -f ~/Library/Logs/Clawdmeter/clawdmeter.out.log
+```
+
+Manage:
+
+```bash
+launchctl kickstart -k gui/$(id -u)/com.clawdmeter.daemon   # restart
+launchctl bootout   gui/$(id -u)/com.clawdmeter.daemon      # stop & unload
+```
+
+The macOS daemon reads the OAuth token from the **Keychain** (`Claude Code-credentials`), not from a file — that's where the Claude Code app stores it on macOS.
+
+### Linux (original)
 
 ```bash
 ./install.sh
@@ -76,6 +113,8 @@ systemctl --user start claude-usage-daemon
 Check status: `systemctl --user status claude-usage-daemon`
 
 View logs: `journalctl --user -u claude-usage-daemon -f`
+
+The Linux daemon reads the OAuth token from `~/.claude/.credentials.json`.
 
 ## How it works
 
@@ -87,17 +126,20 @@ View logs: `journalctl --user -u claude-usage-daemon -f`
 6. The firmware also tracks the rate of change of session % over a 5-minute window and picks splash animations from the matching mood group.
 7. The two side buttons are independent of all of this — they send Space and Shift+Tab as BLE HID keyboard input to the paired host directly.
 
-## Physical buttons
+## Physical buttons (T-Display S3)
 
-The board has three side buttons. Left and right do the same thing on every screen; the middle button is screen-aware.
+The T-Display S3 has two side buttons. In landscape (USB-C on the right) the BOOT button is on top and the user button is on the bottom. Each has a short-press and a long-press action.
 
-| Button           | GPIO         | Function                                                       |
-| ---------------- | ------------ | -------------------------------------------------------------- |
-| **Left**         | GPIO 0       | Hold to send Space (Claude Code voice-mode push-to-talk)       |
-| **Middle** (PWR) | AXP2101 PKEY | Cycle screens (Usage ↔ Bluetooth); on splash, cycle animations |
-| **Right**        | GPIO 18      | Press to send Shift+Tab (Claude Code mode toggle)              |
+| Button     | GPIO    | Short tap                                              | Long press (≥ 600 ms)                                    |
+| ---------- | ------- | ------------------------------------------------------ | -------------------------------------------------------- |
+| **Top**    | GPIO 0  | Space (Claude Code voice-mode toggle)                  | Cycle screen (Usage ↔ Bluetooth ↔ Splash)                |
+| **Bottom** | GPIO 14 | Shift+Tab (Claude Code mode toggle)                    | On Splash: next animation. Elsewhere: toggle Splash      |
+
+Hold **both buttons together for 2 seconds** to clear BLE bonds (this replaces the on-screen "Reset Bluetooth" touch zone on the AMOLED version).
 
 Space and Shift+Tab go out as standard BLE HID keyboard reports, so they trigger in whatever window has focus on the paired host — not just Claude Code.
+
+The original AMOLED has three buttons (Left/Middle/Right) — see [Hermann's README](https://github.com/HermannBjorgvin/Clawdmeter#physical-buttons) for that mapping.
 
 ## BLE protocol
 
@@ -120,9 +162,7 @@ Fields: `s` = session %, `sr` = session reset (minutes), `w` = weekly %, `wr` = 
 
 ## Recompiling fonts
 
-The `firmware/src/font_*.c` files are pre-compiled LVGL bitmap fonts. Sizes
-are roughly 1.9× larger than the Panlee 165 PPI panel this project started on,
-to match the 314 PPI of the 2.16" AMOLED.
+The `firmware/src/font_*.c` files are pre-compiled LVGL bitmap fonts. The AMOLED build uses the larger sizes (tiempos_56, styrene_48/28/24/20, mono_32) to suit its 314 PPI panel; the T-Display build uses the smaller ladder (tiempos_34, styrene_24/14, mono_18) to suit its tighter 320×170 frame.
 
 ```bash
 npm install -g lv_font_conv
@@ -131,23 +171,27 @@ npm install -g lv_font_conv
 Generate each one (one at a time — `lv_font_conv` doesn't like loop-driven invocations) with `--no-compress` (required for LVGL 9):
 
 ```bash
-# Tiempos Text (titles, 56px)
-lv_font_conv --font assets/TiemposText-400-Regular.otf -r 0x20-0x7E \
-  --size 56 --format lvgl --bpp 4 --no-compress \
-  -o firmware/src/font_tiempos_56.c --lv-include "lvgl.h"
+# Tiempos Text (titles — 56 for AMOLED, 34 for T-Display)
+for size in 56 34; do
+  lv_font_conv --font assets/TiemposText-400-Regular.otf -r 0x20-0x7E \
+    --size $size --format lvgl --bpp 4 --no-compress \
+    -o firmware/src/font_tiempos_${size}.c --lv-include "lvgl.h"
+done
 
-# Styrene B (large numbers 48, panel labels 28, small text 24, minimal 20)
-for size in 48 28 24 20; do
+# Styrene B (large numbers, panel labels, small text)
+for size in 48 28 24 20 16 14 12; do
   lv_font_conv --font assets/StyreneB-Regular.otf -r 0x20-0x7E \
     --size $size --format lvgl --bpp 4 --no-compress \
     -o firmware/src/font_styrene_${size}.c --lv-include "lvgl.h"
 done
 
-# DejaVu Sans Mono (32px, with spinner Unicode chars)
-lv_font_conv --font assets/DejaVuSansMono.ttf \
-  -r 0x20-0x7E,0xB7,0x2026,0x2722,0x2733,0x2736,0x273B,0x273D \
-  --size 32 --format lvgl --bpp 4 --no-compress \
-  -o firmware/src/font_mono_32.c --lv-include "lvgl.h"
+# DejaVu Sans Mono (32 for AMOLED, 18 for T-Display — both need spinner Unicode chars)
+for size in 32 18; do
+  lv_font_conv --font assets/DejaVuSansMono.ttf \
+    -r 0x20-0x7E,0xB7,0x2026,0x2722,0x2733,0x2736,0x273B,0x273D \
+    --size $size --format lvgl --bpp 4 --no-compress \
+    -o firmware/src/font_mono_${size}.c --lv-include "lvgl.h"
+done
 ```
 
 **Important:** `lv_font_conv` v1.5.3 outputs LVGL 8 format. Each generated file must be patched for LVGL 9 compatibility:
@@ -161,7 +205,7 @@ Without these patches, fonts compile but render as invisible.
 
 ## Converting Lucide icons
 
-The UI uses a small set of [Lucide](https://lucide.dev) icons (bluetooth + battery states) converted to RGB565 / RGB565A8 C arrays for LVGL.
+The UI uses a small set of [Lucide](https://lucide.dev) icons (bluetooth + battery states) converted to RGB565 / RGB565A8 C arrays for LVGL. The T-Display build doesn't use the battery icons (no battery hardware) but they remain in `icons.h` for the AMOLED build.
 
 ```bash
 node tools/png_to_lvgl.js assets/icon_bluetooth_48.png icon_bluetooth_data ICON_BLUETOOTH_WIDTH ICON_BLUETOOTH_HEIGHT
@@ -182,16 +226,18 @@ To re-pull (e.g. when the source library updates):
 ```bash
 node tools/scrape_claudepix.js
 node tools/convert_to_c.js
-pio run -d firmware -t upload
+pio run -d firmware -e lilygo_tdisplay_s3 -t upload   # or -e waveshare_amoled_216
 ```
 
 See `tools/README.md` for details.
 
 ## Credits
 
-- Pixel-art Clawd animation by [@amaanbuilds](https://x.com/amaanbuilds), sourced from [claudepix.vercel.app](https://claudepix.vercel.app). Frame data and palettes scraped + converted by the tooling in `tools/`.
-- Lucide icon set ([lucide.dev](https://lucide.dev), MIT) for bluetooth and battery UI glyphs.
-- Anthropic brand fonts (Tiempos Text, Styrene B) — see licensing warning below.
+- **Original project, design, and ongoing work**: [Hermann Bjorgvin](https://github.com/HermannBjorgvin) ([HermannBjorgvin/Clawdmeter](https://github.com/HermannBjorgvin/Clawdmeter)). Every architectural decision in this fork is downstream of his.
+- **Pixel-art Clawd animation** by [@amaanbuilds](https://x.com/amaanbuilds), sourced from [claudepix.vercel.app](https://claudepix.vercel.app). Frame data and palettes scraped + converted by the tooling in `tools/`.
+- **Lucide icon set** ([lucide.dev](https://lucide.dev), MIT) for bluetooth and battery UI glyphs.
+- **Anthropic brand fonts** (Tiempos Text, Styrene B) — see licensing warning below.
+- **T-Display S3 port** in this fork: [@bperlman](https://github.com/bperlman).
 
 ## Licensing gray area warning
 

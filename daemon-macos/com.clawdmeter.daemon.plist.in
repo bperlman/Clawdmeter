@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: install-macos.sh replaces __PYTHON__ and __SCRIPT__ with
+     absolute paths before installing to ~/Library/LaunchAgents. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.clawdmeter.daemon</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PYTHON__</string>
+        <string>__SCRIPT__</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>__LOGDIR__/clawdmeter.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__LOGDIR__/clawdmeter.err.log</string>
+</dict>
+</plist>
