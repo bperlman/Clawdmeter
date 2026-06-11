@@ -127,12 +127,23 @@ def poll_anthropic(token: str) -> dict:
 
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
+            status_code = resp.status
             headers = {k.lower(): v for k, v in resp.headers.items()}
     except urllib.error.HTTPError as e:
-        # Even 4xx responses carry the rate-limit headers we need.
+        # Rate-limited (429) responses still carry the headers we need —
+        # but auth failures (401) don't, which the check below catches.
+        status_code = e.code
         headers = {k.lower(): v for k, v in e.headers.items()}
     except urllib.error.URLError as e:
         raise RuntimeError(f"API call failed: {e}")
+
+    # A response without the utilization headers (expired token, gateway
+    # error, ...) must be treated as a failed poll. Parsing it would send
+    # all-zeros marked ok:true and the display would show them as real.
+    if "anthropic-ratelimit-unified-5h-utilization" not in headers:
+        raise RuntimeError(
+            f"API response (HTTP {status_code}) has no rate-limit headers"
+        )
 
     def f(key: str, default: float = 0.0) -> float:
         try:
@@ -325,6 +336,9 @@ class Daemon:
                     payload = poll_anthropic(token)
                 except Exception as e:
                     log.warning("Poll error: %s", e)
+                    # Wait a full interval before retrying — a dead token
+                    # stays dead for a while; no point hammering every tick.
+                    last_poll = now
                 else:
                     if await self.send_payload(client, payload):
                         last_poll = now
