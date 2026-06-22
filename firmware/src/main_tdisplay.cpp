@@ -234,21 +234,26 @@ void setup(void) {
 
 static ble_state_t last_ble_state = BLE_STATE_INIT;
 
-// ---- Auto screen switching: splash → usage while usage is climbing,
-// back to splash after AUTO_IDLE_MS without an increment.
-// The API reports utilization at whole-percent granularity, and heavy use
-// accrues ~1%/10min — so anything shorter reads an active session as idle.
-#define AUTO_IDLE_MS (20UL * 60UL * 1000UL)
+// ---- Auto screen switching.
+// Boots on the splash. Switches to the usage screen on the FIRST data after
+// boot, and again on any later increment (so it comes back when usage resumes
+// after an idle stretch). Returns to the splash only after a full hour with no
+// increment — the API reports whole-percent granularity and light use can sit
+// on one percent for a long time, so the idle bar has to be generous.
+#define AUTO_IDLE_MS (60UL * 60UL * 1000UL)
 static float    last_session_pct = -1.0f;
 static uint32_t last_increment_ms = 0;
 
 static void auto_screen_on_data(float session_pct) {
     uint32_t now = millis();
-    if (last_session_pct >= 0.0f && session_pct > last_session_pct) {
+    bool first_sample = (last_session_pct < 0.0f);
+    bool incremented  = (!first_sample && session_pct > last_session_pct);
+
+    if (first_sample || incremented) {
         last_increment_ms = now;
         if (ui_get_current_screen() == SCREEN_SPLASH) {
-            Serial.printf("auto: usage climbing (%.1f%% -> %.1f%%), showing usage screen\n",
-                          last_session_pct, session_pct);
+            Serial.printf("auto: showing usage screen (s=%.1f%%, %s)\n",
+                          session_pct, first_sample ? "first data" : "climbing");
             ui_show_screen(SCREEN_USAGE);
             auto_on_usage = true;
         }
@@ -259,7 +264,7 @@ static void auto_screen_on_data(float session_pct) {
 static void auto_screen_tick(void) {
     if (auto_on_usage && ui_get_current_screen() == SCREEN_USAGE &&
         (millis() - last_increment_ms) >= AUTO_IDLE_MS) {
-        Serial.println("auto: usage idle, returning to splash");
+        Serial.println("auto: no usage for an hour, returning to splash");
         ui_show_screen(SCREEN_SPLASH);
         auto_on_usage = false;
     }
