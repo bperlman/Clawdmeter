@@ -105,6 +105,26 @@ launchctl bootout   gui/$(id -u)/com.clawdmeter.daemon      # stop & unload
 
 The macOS daemon reads the OAuth token from the **Keychain** (`Claude Code-credentials`), not from a file — that's where the Claude Code app stores it on macOS.
 
+#### Recommended: a dedicated long-lived token
+
+The `Claude Code-credentials` token lives only ~8 hours and is refreshed *only when Claude Code runs on this machine*. If you work from another machine (or cloud sessions) for a day, the local token expires and every poll 401s until you next use Claude Code here — the display freezes on its last values.
+
+To avoid that, give the daemon its own long-lived token (≈1 year, same Max/Pro plan, independent of Claude Code). The daemon prefers it automatically if present:
+
+```bash
+# 1) Mint a long-lived token (opens a browser to approve)
+claude setup-token            # prints sk-ant-oat01-...
+
+# 2) Store it in the keychain without it hitting your shell history
+#    (paste the token at the blank prompt, press enter)
+read -s TOKEN && security add-generic-password -U -s "Clawdmeter-token" -a "$USER" -w "$TOKEN" && unset TOKEN
+
+# 3) Restart the daemon
+launchctl kickstart -k gui/$(id -u)/com.clawdmeter.daemon
+```
+
+Remove it any time with `security delete-generic-password -s "Clawdmeter-token"`; the daemon falls back to the `Claude Code-credentials` token.
+
 ### Linux (original)
 
 ```bash

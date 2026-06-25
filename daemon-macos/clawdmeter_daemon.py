@@ -41,7 +41,14 @@ TICK = 5             # inner-loop sleep
 SCAN_TIMEOUT = 10
 CONNECT_TIMEOUT = 10
 
-# Keychain entry written by Claude Code on macOS.
+# Dedicated long-lived token for the daemon (preferred). Create one with
+# `claude setup-token` and store it under this keychain service name —
+# see README. Unlike Claude Code's own access token (8h lifetime, only
+# refreshed when Claude Code is used on THIS machine), it stays valid for
+# ~a year and the daemon never has to touch Claude Code's credentials.
+DAEMON_KEYCHAIN_SERVICE = "Clawdmeter-token"
+
+# Fallback: Claude Code's own credentials (read-only — never written).
 KEYCHAIN_SERVICE = "Claude Code-credentials"
 
 CACHE_DIR = Path.home() / ".config" / "claude-usage-monitor"
@@ -59,28 +66,27 @@ log = logging.getLogger("clawdmeter")
 # OAuth token (macOS keychain)
 # ============================================================================
 
-def read_token() -> str:
-    """Read the Claude Code OAuth access token from the macOS keychain.
+def _keychain_read(service: str) -> str | None:
+    """Read a keychain item's secret; None if the item doesn't exist.
 
     `security` writes the password to stderr by default (the `-w` flag moves
     it to stdout — both go to *this* process, never to the terminal or
-    transcript). The keychain value is a JSON blob with shape:
-        {"claudeAiOauth": {"accessToken": "...", ...}}
+    transcript).
     """
     try:
         result = subprocess.run(
-            ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
+            ["security", "find-generic-password", "-s", service, "-w"],
             capture_output=True,
             text=True,
             check=True,
             timeout=10,
         )
     except subprocess.CalledProcessError:
-        raise RuntimeError(
-            f"Could not read '{KEYCHAIN_SERVICE}' from keychain. "
-            "Sign in to Claude Code first."
-        )
-    raw = result.stdout.strip()
+        return None
+    return result.stdout.strip() or None
+
+
+def _extract_access_token(raw: str) -> str:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
@@ -98,6 +104,28 @@ def read_token() -> str:
             if isinstance(cur, str) and cur:
                 return cur
     raise RuntimeError("Keychain value has unexpected shape (no accessToken)")
+
+
+def read_token() -> str:
+    """Return an access token, preferring the daemon's own long-lived token.
+
+    The dedicated item (service "Clawdmeter-token", created from a
+    `claude setup-token` token) is independent of Claude Code's 8-hour
+    access token, which only gets refreshed when Claude Code is actively
+    used on this machine. Falling back to Claude Code's credentials works,
+    but goes stale if you work from another machine all day.
+    """
+    own = _keychain_read(DAEMON_KEYCHAIN_SERVICE)
+    if own:
+        return own
+    raw = _keychain_read(KEYCHAIN_SERVICE)
+    if raw is None:
+        raise RuntimeError(
+            f"No '{DAEMON_KEYCHAIN_SERVICE}' or '{KEYCHAIN_SERVICE}' in "
+            "keychain. Run `claude setup-token` (see README) or sign in "
+            "to Claude Code."
+        )
+    return _extract_access_token(raw)
 
 
 # ============================================================================
@@ -332,8 +360,7 @@ class Daemon:
             if need_poll:
                 self.refresh_requested.clear()
                 try:
-                    token = read_token()
-                    payload = poll_anthropic(token)
+                    payload = poll_anthropic(read_token())
                 except Exception as e:
                     log.warning("Poll error: %s", e)
                     # Wait a full interval before retrying — a dead token
