@@ -329,6 +329,29 @@ void ui_init(void) {
     splash_init(scr, SCR_W, SCR_H, 7);  // 7×7 cells → 140×140 creature
 }
 
+// ---- Live reset countdown ----
+// The daemon sends "minutes until reset" at poll time. Rather than show that
+// as static text (which goes stale the moment the daemon can't update — 401,
+// BLE drop, Mac asleep), we anchor it to the local clock and tick it down on
+// the device's own time. Re-anchored on every fresh update; keeps counting
+// (and stays correct) through any daemon stall.
+static int      session_reset_secs0 = -1;   // seconds remaining at anchor (<0 = unknown)
+static uint32_t session_reset_anchor = 0;
+static int      weekly_reset_secs0  = -1;
+static uint32_t weekly_reset_anchor = 0;
+
+static void render_reset_label(lv_obj_t* lbl, int secs0, uint32_t anchor) {
+    char buf[24];
+    if (secs0 < 0) {
+        snprintf(buf, sizeof(buf), "---");
+    } else {
+        int rem = secs0 - (int)((lv_tick_get() - anchor) / 1000);
+        if (rem < 0) rem = 0;
+        format_reset_time(rem / 60, buf, sizeof(buf));
+    }
+    lv_label_set_text(lbl, buf);
+}
+
 void ui_update(const UsageData* data) {
     if (!data->valid) return;
 
@@ -337,23 +360,37 @@ void ui_update(const UsageData* data) {
     lv_bar_set_value(bar_session, s_pct, LV_ANIM_ON);
     lv_obj_set_style_bg_color(bar_session, pct_color(data->session_pct), LV_PART_INDICATOR);
 
-    char buf[24];
-    format_reset_time(data->session_reset_mins, buf, sizeof(buf));
-    lv_label_set_text(lbl_session_reset, buf);
-
     int w_pct = (int)(data->weekly_pct + 0.5f);
     lv_label_set_text_fmt(lbl_weekly_pct, "%d%%", w_pct);
     lv_bar_set_value(bar_weekly, w_pct, LV_ANIM_ON);
     lv_obj_set_style_bg_color(bar_weekly, pct_color(data->weekly_pct), LV_PART_INDICATOR);
 
-    format_reset_time(data->weekly_reset_mins, buf, sizeof(buf));
-    lv_label_set_text(lbl_weekly_reset, buf);
+    // Anchor the reset countdowns to the local clock and render immediately.
+    uint32_t now = lv_tick_get();
+    session_reset_secs0  = data->session_reset_mins >= 0 ? data->session_reset_mins * 60 : -1;
+    session_reset_anchor = now;
+    weekly_reset_secs0   = data->weekly_reset_mins >= 0 ? data->weekly_reset_mins * 60 : -1;
+    weekly_reset_anchor  = now;
+    render_reset_label(lbl_session_reset, session_reset_secs0, session_reset_anchor);
+    render_reset_label(lbl_weekly_reset,  weekly_reset_secs0,  weekly_reset_anchor);
+}
+
+// Refresh the live countdown once per second. Called from ui_tick_anim, which
+// already runs only while the usage screen is visible.
+static uint32_t reset_tick_ms = 0;
+static void ui_tick_reset_countdown(uint32_t now) {
+    if (now - reset_tick_ms < 1000) return;
+    reset_tick_ms = now;
+    render_reset_label(lbl_session_reset, session_reset_secs0, session_reset_anchor);
+    render_reset_label(lbl_weekly_reset,  weekly_reset_secs0,  weekly_reset_anchor);
 }
 
 void ui_tick_anim(void) {
     if (current_screen != SCREEN_USAGE) return;
 
     uint32_t now = lv_tick_get();
+
+    ui_tick_reset_countdown(now);
 
     if (now - anim_msg_start >= ANIM_MSG_MS) {
         anim_msg_idx = (anim_msg_idx + 1) % ANIM_MSG_COUNT;
